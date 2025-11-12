@@ -28,6 +28,10 @@ This README is the single source of truth for running and understanding the loca
 Prerequisites
 - Node.js 18+ and npm
 - Python 3.11+ and pip
+- **Tesseract OCR** (system-level binary) — required for screenshot text extraction
+  - **Ubuntu/Debian**: `sudo apt-get install tesseract-ocr`
+  - **macOS**: `brew install tesseract`
+  - **Windows**: Download installer from https://github.com/UB-Mannheim/tesseract/wiki
 - Optional: Supabase project with pgvector (if you want a hosted vector DB) or a Postgres 13+ with pgvector locally
 
 1. Install and configure backend
