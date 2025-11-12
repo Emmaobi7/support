@@ -15,7 +15,7 @@ A modern, production-ready AI-powered customer support system with real-time scr
 
 This repository contains a compact prototype of an AI-powered support assistant with realtime chat, screen sharing, screenshot OCR, and a retrieval-augmented-document (RAG) ingestion flow.
 
-This README is the single source of truth for running and understanding the local dev setup. (You asked me to update this file only — everything below is current to the code in this workspace.)
+This README is the single source of truth for running and understanding the local dev setup.
 
 ## What this project does (short)
 - Frontend: React + Vite UI with Chat and Screen Share panels. A dedicated "Upload Docs" page lets you paste large documents for RAG ingestion.
@@ -138,12 +138,3 @@ Open the UI: http://localhost:3000 — or the API docs at http://localhost:8000/
 - OCR poor results? Capture a larger area (full window) or make sure the browser preview is large. The backend upscales small images but starting from a larger capture helps.
 - Embedding dimension mismatch? Confirm the vector column definition in Supabase (vector(1024) vs vector(1536)). Use the SQL in `scripts/` if needed.
 
-## Next steps & suggestions
-
-- Add document chunking before ingestion for very large docs (split on paragraphs/headers). There is a TODO entry in the repo for chunking and tests.
-- Add a documents table to store raw docs when embeddings are temporarily unavailable so customer content is never lost.
-- Add unit tests for `context_store.ingest_text` and `retrieve_similar_context` (fast, deterministic mocks for embedding provider).
-
----
-
-If you'd like, I can also prepare a short developer README (`dev-README.md`) that includes quick commands (start, test, debug) and example curl requests. Tell me if you want that — but per your request I only updated this top-level README.
