@@ -11,349 +11,135 @@ A modern, production-ready AI-powered customer support system with real-time scr
 - **Offline Mode**: Graceful fallback when backend is unavailable
 
 ### 🤖 **Pluggable AI Architecture**
-- **Multiple Providers**: OpenAI GPT, Anthropic Claude, easily extensible
-- **Runtime Switching**: Change AI providers without restart
-- **Smart Detection**: Analyzes user confusion to trigger screen sharing
-- **Token Tracking**: Monitor usage and costs across providers
+# AI Support Assistant
 
-### 📺 **Advanced Screen Sharing**
-- **Agora Integration**: Professional-grade screen sharing
-- **Secure Tokens**: Backend-generated authentication
-- **Session Management**: Automatic cleanup and error handling
-- **Browser Native**: Fallback to native screen capture
+This repository contains a compact prototype of an AI-powered support assistant with realtime chat, screen sharing, screenshot OCR, and a retrieval-augmented-document (RAG) ingestion flow.
 
-### 🚀 **Production Ready**
-- **Responsive Design**: Mobile-first with desktop optimization
-- **Error Handling**: Comprehensive error boundaries and fallbacks
-- **Loading States**: Beautiful loading indicators and status updates
-- **Health Monitoring**: Real-time connection status and provider info
+This README is the single source of truth for running and understanding the local dev setup. (You asked me to update this file only — everything below is current to the code in this workspace.)
 
-## 📁 Project Structure
+## What this project does (short)
+- Frontend: React + Vite UI with Chat and Screen Share panels. A dedicated "Upload Docs" page lets you paste large documents for RAG ingestion.
+- Backend: FastAPI app exposing chat, agent management, Agora token generation, screenshot OCR, and a docs ingestion endpoint that inserts text + embeddings into a vector store (Supabase Postgres or local Postgres fallback).
+- Embeddings: Prefers Voyage AI (when `VOYAGE_API_KEY` is set), falls back to OpenAI embeddings. Be mindful of embedding dimensionality (Voyage = 1024 dims; OpenAI text-embedding-3 = 1536 dims).
+- OCR: Server-side Tesseract (pytesseract) with preprocessing (upscaling, contrast/sharpness) to improve extraction. Frontend captures high-DPI screenshots to improve OCR accuracy.
 
-```
-ai-support/
-├── 🎨 frontend/                 # React + Vite Frontend
-│   ├── src/
-│   │   ├── components/          # UI Components
-│   │   │   ├── ChatWindow.jsx   # Real-time chat interface
-│   │   │   └── ScreenShare.jsx  # Screen sharing component
-│   │   ├── services/            # API Layer
-│   │   │   ├── api.js           # Axios configuration
-│   │   │   ├── chatService.js   # Chat API integration
-│   │   │   └── agoraService.js  # Agora token management
-│   │   ├── pages/               # Page Components
-│   │   │   └── Home.jsx         # Main application layout
-│   │   └── main.jsx             # Application entry point
-│   ├── package.json             # Dependencies and scripts
-│   ├── .env.example            # Environment template
-│   └── README.md               # Frontend documentation
-│
-├── 🔧 backend/                  # FastAPI Backend
-│   ├── app/
-│   │   ├── agents/              # 🤖 Pluggable AI Agents
-│   │   │   ├── base.py         # Abstract agent interface
-│   │   │   ├── openai_agent.py # OpenAI implementation
-│   │   │   └── anthropic_agent.py # Anthropic implementation
-│   │   ├── api/                 # RESTful API endpoints
-│   │   ├── core/                # Configuration management
-│   │   ├── models/              # Pydantic data models
-│   │   ├── services/            # Business logic layer
-│   │   └── main.py             # FastAPI application
-│   ├── requirements.txt         # Python dependencies
-│   ├── .env.example            # Environment template
-│   ├── start.sh                # Startup script
-│   └── README.md               # Backend documentation
-│
-└── 📖 task.md                   # Project requirements
-```
+## Quick start (local dev)
 
-## 🚀 Quick Start
+Prerequisites
+- Node.js 18+ and npm
+- Python 3.11+ and pip
+- Optional: Supabase project with pgvector (if you want a hosted vector DB) or a Postgres 13+ with pgvector locally
 
-### Prerequisites
-- **Node.js** 18+ and npm
-- **Python** 3.11+ and pip
-- **API Keys**: OpenAI and/or Anthropic (optional for demo)
-- **Agora Account**: For production screen sharing (optional)
+1. Install and configure backend
 
-### 1. Clone & Setup
-```bash
-git clone <your-repo>
-cd ai-support
-```
-
-### 2. Backend Setup
 ```bash
 cd backend
 python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\\Scripts\\activate
+source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env with your API keys (optional for demo)
+# Edit backend/.env with your keys (SUPABASE_URL, SUPABASE_KEY, VOYAGE_API_KEY, OPENAI_API_KEY, AGORA_*)
 ```
 
-### 3. Frontend Setup
+Important: This project expects `backend/.env`. The backend code will load `backend/.env` automatically at startup (see `backend/app/main.py`).
+
+2. Install frontend
+
 ```bash
 cd frontend
 npm install
 cp .env.example .env
-# Default config works for local development
+# Helpful front-end env vars you can set in frontend/.env:
+# VITE_BACKEND_URL=http://localhost:8000
+# VITE_API_BASE_URL=http://localhost:8000  # used by some components
+# VITE_AGORA_APP_ID=your_agora_app_id
 ```
 
-### 4. Start Development Servers
+3. Start servers
 
-**Terminal 1 - Backend:**
+Backend (from repo root or backend/):
+
 ```bash
 cd backend
 source venv/bin/activate
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**Terminal 2 - Frontend:**
+Frontend:
+
 ```bash
 cd frontend
 npm run dev
 ```
 
-### 5. Access the Application
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
+Open the UI: http://localhost:3000 — or the API docs at http://localhost:8000/docs
 
-## 🎮 How to Use
+## Key developer flows
 
-### 1. **Start Chatting**
-- Open http://localhost:3000
-- Type a message to the AI assistant
-- Notice the connection status indicator
+1) Ingest a document (UI)
+- Click `Upload Docs` in the top-right of the Home page to open the dedicated ingestion page.
+- Paste a title (optional) and the document body (very large textarea), then click `Ingest Document`.
+- The frontend posts to `POST /api/v1/docs`. The backend computes an embedding and inserts the document into the vector store.
 
-### 2. **Trigger Screen Sharing**
-- Type messages with keywords like:
-  - "I'm stuck"
-  - "I have a problem"
-  - "This isn't working"
-  - "I need help"
-- AI will request screen sharing
+2) Screenshot OCR
+- While screen-sharing, click `Send Screenshot`. The frontend captures a high-resolution canvas (considers devicePixelRatio), uploads to `POST /api/v1/screenshots` and the backend runs pytesseract with preprocessing (upscale + contrast/sharpness + PSM config).
+- The OCR text (if any) is included in the chat message sent to the assistant.
 
-### 3. **Share Your Screen**
-- Click "Share My Screen" when prompted
-- Grant browser permissions
-- See live preview while chatting continues
+3) Retrieval / RAG
+- The Anthropic (or chosen) agent calls `retrieve_similar_context()` before generating a response. That function queries the vector store and returns the top-k similar document chunks to prepend to the system prompt.
 
-### 4. **Monitor System Status**
-- Connection indicator shows online/offline status
-- Current AI provider displayed in chat header
-- Token usage shown for API calls
-- Error messages with graceful fallbacks
+## Important endpoints
 
-## 🔧 Configuration
+- POST /api/v1/chat — send chat messages
+- POST /api/v1/docs — ingest document text for embeddings
+- POST /api/v1/screenshots — upload screenshot, returns OCR text
+- POST /api/v1/agent/switch — switch AI provider
+- POST /api/v1/agora/token — get Agora token for screen sharing
+- GET /api/v1/health — health & provider info
 
-### Frontend Environment (.env)
-```env
-# API Configuration
-VITE_API_BASE_URL=http://localhost:8000
+## Embeddings & Vector DB notes
 
-# Agora Configuration
-VITE_AGORA_APP_ID=your_agora_app_id_here
+- Embedding providers: code prefers `VOYAGE_API_KEY` (Voyage AI) and falls back to OpenAI. Voyage returns 1024-dim vectors; OpenAI embeddings are 1536-dim. If you change provider, ensure your Supabase table's `vector` column matches the embedding dimension.
+- Supabase: a SQL script exists in `scripts/setup_supabase_embeddings_voyage.sql` (for a 1024-dim vector column). If you previously created an embeddings table for OpenAI (1536), create a separate table for Voyage or alter accordingly.
+- Local Postgres fallback: the code can insert into a local Postgres if `POSTGRES_DSN` is set (requires pgvector extension and compatible Postgres version).
 
-# Development
-VITE_DEBUG=true
-```
+## OCR & Screenshot tips
 
-### Backend Environment (.env)
-```env
-# AI API Keys (optional for demo)
-OPENAI_API_KEY=your_openai_api_key_here
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
+- Use a larger window or full-screen capture to improve OCR. The frontend captures canvas width/height from the video element; small previews produce smaller images and worse OCR results.
+- High-DPI displays: the frontend respects `devicePixelRatio` and captures higher-resolution images when available.
+- If OCR fails, backend logs include `[OCR]` messages showing whether the server upscaled the image and how many characters were extracted.
 
-# Agora Configuration (optional for demo)
-AGORA_APP_ID=your_agora_app_id_here
-AGORA_APP_CERTIFICATE=your_agora_app_certificate_here
+## Debugging & useful scripts
 
-# AI Configuration
-DEFAULT_AI_PROVIDER=openai
-AI_TEMPERATURE=0.7
-AI_MAX_TOKENS=1000
-```
+- `scripts/test_supabase_context.py` — quick script that loads `backend/.env`, ingests a test document via `context_store.ingest_text()` and runs `retrieve_similar_context()` to verify ingestion and retrieval.
+- Logs: the backend prints useful debug messages during embedding and ingestion (e.g. `Voyage embedding successful, vector length: 1024`, `Supabase not configured; skipping ingest`).
 
-## 🎯 Key Features Demonstrated
+## Where the important code lives
 
-### Smart AI Detection
-The system analyzes user messages for:
-- **Confusion Keywords**: "stuck", "error", "problem"
-- **Emotional Indicators**: Frustration, urgency
-- **Technical Patterns**: Error codes, technical issues
-- **Question Density**: Multiple questions indicate uncertainty
+- Frontend
+  - `frontend/src/pages/Home.jsx` — main layout + ChatWindow + ScreenShare
+  - `frontend/src/pages/DocUpload.jsx` — dedicated document ingestion page (very large textarea)
+  - `frontend/src/components/ScreenShare.jsx` — capture & screenshot upload flow
+  - `frontend/src/components/ChatWindow.jsx` — chat UI + listens for `ai-message` events
 
-### Pluggable Architecture
-Switch AI providers easily:
-```bash
-# Via API
-curl -X POST "http://localhost:8000/api/v1/agent/switch?provider=anthropic"
+- Backend
+  - `backend/app/main.py` — app entry, loads `.env` on startup
+  - `backend/app/api/endpoints.py` — all API routes (chat, screenshots, docs, agora, health)
+  - `backend/app/services/context_store.py` — embeddings, ingest, retrieval logic
+  - `backend/app/agents/` — pluggable agent implementations (Anthropic/OpenAI)
 
-# Or through the UI (can be added)
-```
+## Troubleshooting checklist
 
-### Error Handling
-- **Network Issues**: Automatic fallback to offline mode
-- **API Errors**: Graceful degradation with fallback responses
-- **Token Limits**: Clear error messages and usage tracking
-- **Screen Share Failures**: Detailed error messages and retry options
+- No embeddings on HTTP requests but tests work? Ensure the process that runs uvicorn sees `backend/.env`. This project loads `backend/.env` early in `app.main`, but if you start uvicorn from a different working directory without envs exported you may see missing keys.
+- OCR poor results? Capture a larger area (full window) or make sure the browser preview is large. The backend upscales small images but starting from a larger capture helps.
+- Embedding dimension mismatch? Confirm the vector column definition in Supabase (vector(1024) vs vector(1536)). Use the SQL in `scripts/` if needed.
 
-### Real-time Features
-- **Connection Status**: Live monitoring of backend connectivity
-- **Provider Info**: Current AI provider displayed
-- **Token Usage**: Real-time API usage tracking
-- **Session Management**: Automatic cleanup and error recovery
+## Next steps & suggestions
 
-## 🔄 API Integration Flow
-
-### Chat Flow
-1. **User types message** → Frontend
-2. **Message sent to backend** → ChatService
-3. **AI processes message** → OpenAI/Anthropic Agent
-4. **Confusion analysis** → Smart detection algorithm
-5. **Response returned** → Frontend with screen share flag
-6. **UI updates** → Show response + screen share request
-
-### Screen Share Flow
-1. **AI requests screen sharing** → Backend analysis
-2. **Generate Agora token** → Backend AgoraService
-3. **User clicks "Share Screen"** → Frontend
-4. **Browser permission request** → Native API
-5. **Stream established** → Live video feed
-6. **Session info displayed** → Channel name, token expiry
-
-## 🧪 Testing
-
-### Test Chat API
-```bash
-curl -X POST "http://localhost:8000/api/v1/chat" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "message": "I need help with my computer",
-    "user_id": "test_user"
-  }'
-```
-
-### Test Provider Switching
-```bash
-curl -X POST "http://localhost:8000/api/v1/agent/switch?provider=anthropic"
-```
-
-### Test Health Check
-```bash
-curl -X GET "http://localhost:8000/api/v1/health"
-```
-
-## 🚀 Production Deployment
-
-### Backend
-```bash
-# Using Docker
-docker build -t ai-support-backend backend/
-docker run -p 8000:8000 -e OPENAI_API_KEY=your_key ai-support-backend
-
-# Or traditional deployment
-gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker
-```
-
-### Frontend
-```bash
-npm run build
-# Deploy dist/ folder to your static hosting service
-```
-
-### Environment Setup
-- Set `DEBUG=false` for production
-- Configure proper CORS origins
-- Use secure secret keys
-- Set up monitoring and logging
-
-## 🎨 Customization
-
-### Adding New AI Providers
-1. **Create agent class** implementing `AIAgent` interface
-2. **Register in factory** (`app/agents/__init__.py`)
-3. **Add configuration** in settings
-4. **Update frontend** if needed
-
-### UI Customization
-- **Tailwind Classes**: Easy styling modifications
-- **Component Props**: Flexible component configuration
-- **Theme Variables**: Consistent color and spacing
-- **Responsive Design**: Built-in mobile optimization
-
-## 🔍 Troubleshooting
-
-### Common Issues
-
-**Frontend shows "Offline Mode"**
-- Check if backend is running on port 8000
-- Verify CORS configuration in backend
-- Check browser console for network errors
-
-**AI responses are fallback messages**
-- Verify API keys in backend .env file
-- Check API key validity and quotas
-- Monitor backend logs for detailed errors
-
-**Screen sharing fails**
-- Grant browser permissions for screen capture
-- Check Agora configuration (optional for demo)
-- Verify HTTPS in production (required for screen capture)
-
-### Debug Mode
-Enable detailed logging:
-```env
-# Frontend
-VITE_DEBUG=true
-
-# Backend  
-DEBUG=true
-```
-
-## 🤝 Contributing
-
-1. **Fork the repository**
-2. **Create feature branch** (`git checkout -b feature/amazing-feature`)
-3. **Follow code standards** (ESLint, Black, etc.)
-4. **Add tests** for new functionality
-5. **Update documentation** as needed
-6. **Submit pull request**
-
-## 📈 Monitoring & Analytics
-
-The system provides comprehensive metrics:
-- **API Response Times**: Monitor backend performance
-- **Token Usage**: Track AI API costs
-- **Confusion Scores**: User satisfaction indicators
-- **Error Rates**: System reliability metrics
-- **Connection Status**: Real-time health monitoring
-
-## 🔐 Security
-
-- **API Keys**: Never exposed in frontend
-- **CORS**: Properly configured origins
-- **Token Expiry**: Agora tokens automatically expire
-- **Error Handling**: No sensitive data in error messages
-- **Environment Variables**: Secure configuration management
+- Add document chunking before ingestion for very large docs (split on paragraphs/headers). There is a TODO entry in the repo for chunking and tests.
+- Add a documents table to store raw docs when embeddings are temporarily unavailable so customer content is never lost.
+- Add unit tests for `context_store.ingest_text` and `retrieve_similar_context` (fast, deterministic mocks for embedding provider).
 
 ---
 
-## 🎉 Success! Your AI Support Assistant is Live!
-
-### What You've Built:
-✅ **Full-stack application** with React frontend and FastAPI backend  
-✅ **Pluggable AI architecture** supporting multiple providers  
-✅ **Real-time chat** with intelligent conversation management  
-✅ **Smart screen sharing** with automatic triggers  
-✅ **Production-ready features** with error handling and monitoring  
-✅ **Beautiful, responsive UI** with loading states and status indicators  
-
-### Test It Out:
-1. 💬 **Chat with AI** - Try different message types
-2. 🖥️ **Trigger screen sharing** - Type "I'm stuck"
-3. 🔄 **See real-time updates** - Connection status, provider info
-4. 🛠️ **Handle errors gracefully** - Stop backend, see offline mode
-
-Built with ❤️ using React, FastAPI, OpenAI, Anthropic, and Agora for the ultimate AI support experience!# support
+If you'd like, I can also prepare a short developer README (`dev-README.md`) that includes quick commands (start, test, debug) and example curl requests. Tell me if you want that — but per your request I only updated this top-level README.
