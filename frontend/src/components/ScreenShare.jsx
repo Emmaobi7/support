@@ -17,6 +17,8 @@ const ScreenShare = ({ isActive, onStart, onStop }) => {
   const [channelName, setChannelName] = useState(null)
   const [isUploadingScreenshot, setIsUploadingScreenshot] = useState(false)
   const videoRef = useRef(null)
+  const captureIntervalRef = useRef(null)
+  const lastCaptureTimeRef = useRef(0)
 
   // Initialize Agora (placeholder for now)
   useEffect(() => {
@@ -85,6 +87,14 @@ const ScreenShare = ({ isActive, onStart, onStop }) => {
         videoRef.current.srcObject = screenStream
       }
 
+      // Start auto-capture: take screenshot every 10 seconds
+      if (captureIntervalRef.current) {
+        clearInterval(captureIntervalRef.current)
+      }
+      captureIntervalRef.current = setInterval(() => {
+        captureAndUploadScreenshot()
+      }, 10000)
+
       // Handle stream end (when user clicks browser's stop sharing button)
       screenStream.getVideoTracks()[0].addEventListener('ended', () => {
         stopScreenShare()
@@ -100,6 +110,12 @@ const ScreenShare = ({ isActive, onStart, onStop }) => {
   }
 
   const stopScreenShare = () => {
+    // Clear auto-capture interval
+    if (captureIntervalRef.current) {
+      clearInterval(captureIntervalRef.current)
+      captureIntervalRef.current = null
+    }
+
     if (stream) {
       stream.getTracks().forEach(track => track.stop())
       setStream(null)
@@ -118,6 +134,50 @@ const ScreenShare = ({ isActive, onStart, onStop }) => {
   const switchToHumanAgent = () => {
     // Placeholder for human agent escalation
     alert('Connecting to human agent... (This is a prototype feature)')
+  }
+
+  const captureAndUploadScreenshot = async () => {
+    if (!videoRef.current) return
+    
+    try {
+      const video = videoRef.current
+      const dpr = window.devicePixelRatio || 1
+      const canvasWidth = (video.videoWidth || video.offsetWidth || 1280) * dpr
+      const canvasHeight = (video.videoHeight || video.offsetHeight || 720) * dpr
+      const canvas = document.createElement('canvas')
+      canvas.width = canvasWidth
+      canvas.height = canvasHeight
+      const ctx = canvas.getContext('2d')
+      ctx.scale(dpr, dpr)
+      ctx.drawImage(video, 0, 0, canvasWidth / dpr, canvasHeight / dpr)
+
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 0.95))
+      const fd = new FormData()
+      fd.append('file', blob, `screenshot-${Date.now()}.png`)
+
+      const resp = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/v1/screenshots`, {
+        method: 'POST',
+        body: fd
+      })
+      const data = await resp.json()
+      
+      if (data.success) {
+        // Send a chat message notifying the AI and include OCR if present
+        const ocrText = data.ocr_text || ''
+        const message = ocrText ? `User shared a screenshot. Extracted text:\n\n${ocrText}` : `User shared a screenshot: ${window.location.origin + data.url}`
+        
+        try {
+          const chatResp = await chatService.sendMessage(message, null, 'demo-user')
+          // Dispatch a window event so sibling components (ChatWindow) can react
+          const payload = chatResp.success ? chatResp.data : { message: { id: `offline-${Date.now()}`, content: message, timestamp: new Date().toISOString(), metadata: { fallback: true } }, conversation_id: null }
+          window.dispatchEvent(new CustomEvent('ai-message', { detail: payload }))
+        } catch (e) {
+          console.warn('Failed to send screenshot to AI', e)
+        }
+      }
+    } catch (err) {
+      console.error('Auto-capture failed', err)
+    }
   }
 
   return (

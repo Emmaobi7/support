@@ -163,6 +163,98 @@ async def upload_screenshot(file: UploadFile = File(...)):
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
+@router.post('/transcribe')
+async def transcribe_audio(file: UploadFile = File(...)):
+    """Transcribe audio file using Deepgram STT.
+    
+    Returns: { success: bool, transcript: str, error?: str }
+    """
+    try:
+        from deepgram import DeepgramClient
+        
+        DEEPGRAM_API_KEY = os.environ.get('DEEPGRAM_API_KEY')
+        if not DEEPGRAM_API_KEY:
+            return JSONResponse({"success": False, "error": "Deepgram API key not configured"}, status_code=400)
+        
+        # Read audio file
+        contents = await file.read()
+        
+        # Create Deepgram client and transcribe
+        client = DeepgramClient(api_key=DEEPGRAM_API_KEY)
+        
+        try:
+            response = client.listen.v1.media.transcribe_file(
+                request=contents,
+                model="nova-3"
+            )
+            
+            # Extract transcript from response
+            transcript = ""
+            if hasattr(response, 'results') and response.results.channels:
+                if response.results.channels[0].alternatives:
+                    transcript = response.results.channels[0].alternatives[0].transcript
+            
+            return JSONResponse({"success": True, "transcript": transcript})
+        except Exception as e:
+            print(f'[Deepgram STT] Transcription error: {e}')
+            return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+            
+    except Exception as e:
+        print(f'[Deepgram STT] Setup error: {e}')
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: Optional[str] = "aura-asteria-en"  # Deepgram voice
+
+
+@router.post('/tts')
+async def text_to_speech(payload: TTSRequest):
+    """Generate speech from text using Deepgram TTS.
+    
+    Returns: audio/mpeg stream
+    """
+    try:
+        from deepgram import DeepgramClient
+        from fastapi.responses import StreamingResponse
+        import io
+        
+        DEEPGRAM_API_KEY = os.environ.get('DEEPGRAM_API_KEY')
+        if not DEEPGRAM_API_KEY:
+            raise HTTPException(status_code=400, detail="Deepgram API key not configured")
+        
+        if not payload.text or not payload.text.strip():
+            raise HTTPException(status_code=400, detail="text is required")
+        
+        # Create Deepgram client
+        client = DeepgramClient(api_key=DEEPGRAM_API_KEY)
+        
+        try:
+            # generate() returns an iterator of bytes
+            response = client.speak.v1.audio.generate(
+                text=payload.text,
+                model=payload.voice
+            )
+            
+            # Collect audio bytes from iterator
+            audio_buffer = io.BytesIO()
+            for chunk in response:
+                audio_buffer.write(chunk)
+            
+            audio_buffer.seek(0)
+            
+            # Return audio stream
+            return StreamingResponse(audio_buffer, media_type="audio/mpeg")
+        except Exception as e:
+            print(f'[Deepgram TTS] Generation error: {e}')
+            raise HTTPException(status_code=500, detail=str(e))
+            
+    except Exception as e:
+        print(f'[Deepgram TTS] Setup error: {e}')
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post('/docs')
 async def ingest_doc(payload: DocIngestRequest):
     """Ingest an application/document text into the vector store for retrieval.

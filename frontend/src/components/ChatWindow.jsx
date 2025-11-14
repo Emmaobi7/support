@@ -1,6 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { PaperAirplaneIcon, UserIcon, CpuChipIcon, ExclamationTriangleIcon } from '@heroicons/react/24/solid'
 import { chatService } from '../services/chatService'
+import SpeechInput from './SpeechInput'
+import SpeechOutput from './SpeechOutput'
+
+// Helper function to clean markdown/special characters from text
+const cleanTextForDisplay = (text) => {
+  if (!text) return ''
+  return text
+    .replace(/\*\*/g, '') // Remove bold markers (**)
+    .replace(/\*([^*]+)\*/g, '$1') // Remove single * markers
+    .replace(/^#+\s/gm, '') // Remove heading markers (# ## etc)
+    .replace(/`([^`]+)`/g, '$1') // Remove inline code backticks
+    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1') // Convert [text](url) to text
+    .replace(/[-*+]\s/g, '• ') // Convert list bullets
+    .trim()
+}
 
 const ChatWindow = ({ onScreenShareRequest }) => {
   const [messages, setMessages] = useState([
@@ -18,11 +33,19 @@ const ChatWindow = ({ onScreenShareRequest }) => {
   const [connectionStatus, setConnectionStatus] = useState('checking') // 'checking', 'connected', 'offline'
   const [currentProvider, setCurrentProvider] = useState('openai')
   const [error, setError] = useState(null)
+  const [isAutoplayActive, setIsAutoplayActive] = useState(false)
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false)
+  const playedMessageIdsRef = useRef(new Set())
   const messagesEndRef = useRef(null)
 
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  useEffect(() => {
+    // Mark initial greeting as played
+    playedMessageIdsRef.current.add(1)
+  }, [])
 
   useEffect(() => {
     // Check backend connection on mount
@@ -175,6 +198,101 @@ const ChatWindow = ({ onScreenShareRequest }) => {
     }
   }
 
+  const playAIMessageTTS = async (messageId, messageText) => {
+    try {
+      setIsPlayingAudio(true)
+      
+      // Clean text: remove markdown/special characters
+      const cleanText = messageText
+        .replace(/[*#_`~\[\](){}|\\/@!$%^&+=<>?;:'"-]/g, ' ') // Remove special chars
+        .replace(/\n+/g, ' ') // Replace newlines with space
+        .replace(/\s+/g, ' ') // Collapse multiple spaces
+        .trim()
+      
+      console.log('Original text:', messageText.substring(0, 100))
+      console.log('Cleaned text:', cleanText.substring(0, 100))
+      
+      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'}/api/v1/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cleanText })
+      })
+
+      if (!res.ok) throw new Error('TTS failed')
+
+      const audioBlob = await res.blob()
+      const audioUrl = URL.createObjectURL(audioBlob)
+      const audio = new Audio(audioUrl)
+      
+      return new Promise((resolve) => {
+        audio.onended = () => {
+          playedMessageIdsRef.current.add(messageId)
+          setIsPlayingAudio(false)
+          resolve()
+        }
+        audio.onerror = () => {
+          playedMessageIdsRef.current.add(messageId)
+          setIsPlayingAudio(false)
+          resolve()
+        }
+        audio.play().catch(() => {
+          playedMessageIdsRef.current.add(messageId)
+          setIsPlayingAudio(false)
+          resolve()
+        })
+      })
+    } catch (err) {
+      console.error('TTS playback error:', err)
+      setIsPlayingAudio(false)
+    }
+  }
+
+  // Simplified: play next unplayed message
+  const playNextMessage = async () => {
+    if (!isAutoplayActive) return
+    
+    // Find the next unplayed AI message
+    const aiMessages = messages.filter(m => m.sender === 'ai')
+    const nextMessage = aiMessages.find(m => !playedMessageIdsRef.current.has(m.id))
+    
+    if (nextMessage) {
+      console.log('Playing next message:', nextMessage.id)
+      await playAIMessageTTS(nextMessage.id, nextMessage.text)
+      // After playing, check for more messages
+      if (isAutoplayActive) {
+        playNextMessage()
+      }
+    } else {
+      // No more messages
+      console.log('No more messages to play')
+      setIsPlayingAudio(false)
+    }
+  }
+
+  // When autoplay is activated or new messages arrive, check if we should play
+  useEffect(() => {
+    if (isAutoplayActive && !isPlayingAudio) {
+      // Check if there are unplayed messages
+      const aiMessages = messages.filter(m => m.sender === 'ai')
+      const hasUnplayed = aiMessages.some(m => !playedMessageIdsRef.current.has(m.id))
+      
+      if (hasUnplayed) {
+        console.log('Starting playback...')
+        playNextMessage()
+      }
+    }
+  }, [isAutoplayActive, messages, isPlayingAudio])
+
+  const toggleAutoplay = (enable) => {
+    console.log('toggleAutoplay:', enable)
+    setIsAutoplayActive(enable)
+    
+    if (!enable) {
+      // Stop playback
+      setIsPlayingAudio(false)
+    }
+  }
+
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -205,6 +323,34 @@ const ChatWindow = ({ onScreenShareRequest }) => {
               </p>
             </div>
           </div>
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          {/* Autoplay button */}
+          <button
+            onClick={() => toggleAutoplay(!isAutoplayActive)}
+            className={`text-sm px-3 py-1 rounded font-medium transition-all ${
+              isAutoplayActive
+                ? 'bg-red-500 text-white hover:bg-red-600'
+                : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+            }`}
+            title={isAutoplayActive ? 'Stop autoplay' : 'Auto-read AI responses via TTS'}
+          >
+            {isAutoplayActive ? (
+              <>
+                <span className="inline-block w-2 h-2 bg-white rounded-full mr-1 animate-pulse"></span>
+                Stop Autoplay
+              </>
+            ) : (
+              <>
+                🔊 Autoplay
+              </>
+            )}
+          </button>
+
+          {isPlayingAudio && (
+            <span className="text-xs text-blue-600 font-medium">Playing...</span>
+          )}
         </div>
         
         {connectionStatus === 'connected' && (
@@ -304,19 +450,27 @@ const ChatWindow = ({ onScreenShareRequest }) => {
                     : 'bg-gray-100 text-gray-800'
                 }`}
               >
-                <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                <p className="text-sm whitespace-pre-wrap">{cleanTextForDisplay(message.text)}</p>
                 <div className="flex items-center justify-between mt-1">
-                  <p className={`text-xs ${
-                    message.sender === 'user' ? 'text-primary-100' : 
-                    message.metadata?.error ? 'text-red-600' :
-                    message.metadata?.fallback ? 'text-yellow-600' :
-                    'text-gray-500'
-                  }`}>
-                    {message.timestamp.toLocaleTimeString([], { 
-                      hour: '2-digit', 
-                      minute: '2-digit' 
-                    })}
-                  </p>
+                  <div className="flex items-center space-x-2">
+                    <p className={`text-xs ${
+                      message.sender === 'user' ? 'text-primary-100' : 
+                      message.metadata?.error ? 'text-red-600' :
+                      message.metadata?.fallback ? 'text-yellow-600' :
+                      'text-gray-500'
+                    }`}>
+                      {message.timestamp.toLocaleTimeString([], { 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                      })}
+                    </p>
+
+                    {/* TTS / play button for AI messages */}
+                    {message.sender === 'ai' && (
+                      <SpeechOutput text={message.text} />
+                    )}
+                  </div>
+
                   {message.metadata?.token_usage && (
                     <p className="text-xs text-gray-400">
                       {message.metadata.token_usage.total_tokens} tokens
@@ -358,12 +512,84 @@ const ChatWindow = ({ onScreenShareRequest }) => {
       {/* Message Input */}
       <div className="p-4 border-t border-gray-200">
         <div className="flex space-x-3">
+          <SpeechInput 
+            onTranscript={(text) => {
+              if (text && text.trim().length > 10) {
+                // Auto-send: don't just set state, call the send logic directly
+                const userMessage = {
+                  id: `user-${Date.now()}`,
+                  text: text,
+                  sender: 'user',
+                  timestamp: new Date()
+                }
+                setMessages(prev => [...prev, userMessage])
+                setIsLoading(true)
+                setError(null)
+
+                // Send to backend immediately
+                chatService.sendMessage(text, conversationId, 'demo-user').then(response => {
+                  if (response.success) {
+                    const { data } = response
+                    if (!conversationId && data.conversation_id) {
+                      setConversationId(data.conversation_id)
+                    }
+                    const aiMessage = {
+                      id: data.message.id || `ai-${Date.now()}`,
+                      text: data.message.content,
+                      sender: 'ai',
+                      timestamp: new Date(data.message.timestamp),
+                      metadata: data.message.metadata || {}
+                    }
+                    setMessages(prev => [...prev, aiMessage])
+                    if (data.should_request_screen_share) {
+                      onScreenShareRequest()
+                    }
+                    if (connectionStatus !== 'connected') {
+                      setConnectionStatus('connected')
+                    }
+                  } else {
+                    const fallbackData = response.fallback
+                    const aiMessage = {
+                      id: fallbackData.message.id,
+                      text: fallbackData.message.content,
+                      sender: 'ai',
+                      timestamp: new Date(fallbackData.message.timestamp),
+                      metadata: { ...fallbackData.message.metadata, error: true }
+                    }
+                    setMessages(prev => [...prev, aiMessage])
+                    setError('Unable to connect to AI service. Using offline mode.')
+                    setConnectionStatus('offline')
+                    if (fallbackData.should_request_screen_share) {
+                      onScreenShareRequest()
+                    }
+                  }
+                  setIsLoading(false)
+                }).catch(error => {
+                  console.error('Failed to send message:', error)
+                  const errorMessage = {
+                    id: `error-${Date.now()}`,
+                    text: "I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.",
+                    sender: 'ai',
+                    timestamp: new Date(),
+                    metadata: { error: true, fallback: true }
+                  }
+                  setMessages(prev => [...prev, errorMessage])
+                  setError('Connection error. Please check your internet connection.')
+                  setConnectionStatus('offline')
+                  setIsLoading(false)
+                })
+              } else {
+                // If < 10 chars, just set the input for manual review
+                setInputMessage(text)
+              }
+            }} 
+          />
           <div className="flex-1">
             <textarea
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Type your message here..."
+              placeholder="Type your message here or use the mic..."
               rows="2"
               className="w-full px-3 py-2 border border-gray-300 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               disabled={isLoading}
